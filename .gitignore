@@ -1,4 +1,5 @@
 # 絕不提交未加密的簽名原圖
 /private/
+*.vault.json
 *.sig.png
 node_modules/

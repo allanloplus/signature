@@ -1,14 +1,13 @@
-/* Allan & 阿拉蕾 文件簽核工坊 — 純前端，文件與簽名皆不離開瀏覽器 */
+/* Allan's簽名工作坊 — 純前端，文件與簽名皆不離開這台裝置 */
 'use strict';
 const $ = id => document.getElementById(id);
 const S = {
   doc: null,          // {name, kind:'pdf'|'docx'|'image', bytes, sha}
   pages: [],          // {cv, wPt, hPt, el}
-  items: [],          // {id, page, x, y, w, ar, cv, vault, el, label}
-  sigs: [],           // {id, label, cv, vault, sample}
-  armed: null, selected: null, allan: null, seq: 0,
+  items: [],          // {id, page, x, y, w, ar, cv, el, label}
+  sigs: [],           // {id, label, cv, sample}
+  armed: null, selected: null, seq: 0,
 };
-const IDLE_MS = 10 * 60 * 1000;
 
 /* ---------- 小工具 ---------- */
 const MOBILE = matchMedia('(max-width:860px)');
@@ -79,18 +78,40 @@ function withCaption(sig, caption) {
   return c;
 }
 
-/* ---------- 簽名清單 ---------- */
+/* ---------- 簽名清單（保存在這台裝置的瀏覽器，不上傳） ---------- */
+const SIG_KEY = 'signstudio.sigs.v1';
+function saveSigs() {
+  try { localStorage.setItem(SIG_KEY, JSON.stringify(S.sigs.filter(s => !s.sample).map(s => ({ id: s.id, label: s.label, png: s.cv.toDataURL('image/png') })))); return true; }
+  catch (e) { toast('這個瀏覽器無法保存簽名（可能是無痕模式或空間不足）', 5000); return false; }
+}
+async function loadSigs() {
+  let list = []; try { list = JSON.parse(localStorage.getItem(SIG_KEY) || '[]'); } catch (e) {}
+  const out = [];
+  for (const s of list) try { const im = await loadImage(s.png), cv = mkCanvas(im.naturalWidth, im.naturalHeight); cv.getContext('2d').drawImage(im, 0, 0); out.push({ id: s.id, label: s.label, cv }); } catch (e) {}
+  return out;
+}
+function addSig(label, cv) {
+  const s = { id: 'u' + Date.now(), label, cv }; S.sigs = S.sigs.filter(q => !q.sample); S.sigs.push(s);
+  const ok = saveSigs(); renderSigs(); if (navigator.storage && navigator.storage.persist) navigator.storage.persist().catch(() => {});
+  guide(ok ? '簽名收到，也幫你去掉白底、存在這台裝置了！下次打開直接就能用，不必再上傳 💾' : '簽名可以用，但這次沒辦法存下來。', 'ok');
+  if (S.pages.length) arm(s);
+}
 function renderSigs() {
   const box = $('sigList'); box.innerHTML = '';
   S.sigs.forEach(s => {
-    const b = document.createElement('button'); b.type = 'button'; b.className = 'sig' + (S.armed === s ? ' armed' : '') + (s.vault ? ' vault' : ''); b.draggable = true;
+    const b = document.createElement('button'); b.type = 'button'; b.className = 'sig' + (S.armed === s ? ' armed' : ''); b.draggable = true;
     const img = document.createElement('img'); img.src = s.cv.toDataURL(); img.alt = s.label; img.draggable = false;
-    const cap = document.createElement('span'); cap.textContent = (s.vault ? '🔐 ' : s.sample ? '🧪 ' : '') + s.label;
+    const cap = document.createElement('span'); cap.textContent = (s.sample ? '🧪 ' : '💾 ') + s.label;
     b.append(img, cap);
-    if (!s.vault) { const del = document.createElement('i'); del.textContent = '×'; del.title = '移除'; del.onclick = e => { e.stopPropagation(); S.sigs = S.sigs.filter(q => q !== s); if (S.armed === s) S.armed = null; renderSigs(); }; b.append(del); }
+    const del = document.createElement('i'); del.textContent = '×'; del.title = '移除';
+    del.onclick = e => {
+      e.stopPropagation(); if (!s.sample && !confirm(`要從這台裝置刪除「${s.label}」嗎？`)) return;
+      S.sigs = S.sigs.filter(q => q !== s); if (S.armed === s) { S.armed = null; document.body.classList.remove('placing'); }
+      if (!s.sample) saveSigs(); renderSigs();
+    };
+    b.append(del);
     b.onclick = () => arm(s);
     b.ondragstart = e => { S.dragSig = s; e.dataTransfer.setData('text/plain', 'sig'); e.dataTransfer.effectAllowed = 'copy'; };
-    b.oncontextmenu = e => { if (s.vault) e.preventDefault(); };
     box.append(b);
   });
 }
@@ -100,7 +121,9 @@ function arm(s) {
   if (S.armed) { sheet(false); if (MOBILE.matches) toast('👉 點文件上要簽的位置', 2200); }
   if (S.armed) guide(`拿好「${s.label}」了！在文件上點一下要簽的位置 👉`, 'go');
 }
-function resetShareSigs() {
+async function initSigs() {
+  S.sigs = await loadSigs();
+  if (S.sigs.length) { renderSigs(); guide(`嗨～這台裝置上存了 ${S.sigs.length} 個簽名，直接把要簽的 Word、PDF 或圖檔丟給我吧！檔案都只在你的裝置上處理，不會上傳 ✨`, 'wave'); return; }
   S.sigs = [
     { id: 'szh', label: '範例中文簽名', sample: true, cv: sampleSig('王小明', `italic 600 120px "DFKai-SB","BiauKai","KaiTi","Kaiti TC","STKaiti",${FONT}`, -0.06) },
     { id: 'sen', label: '範例英文簽名', sample: true, cv: sampleSig('Sample Sign', 'italic 96px "Segoe Script","Brush Script MT","Snell Roundhand","Apple Chancery",cursive', -0.05) },
@@ -189,13 +212,13 @@ function placeAt(sig, pi, ev) {
   if (sig.stampLike !== true && $('optBind').checked) {
     const who = $('fName').value.trim(); cv = withCaption(sig.cv, `${who ? who + ' ' : ''}簽署 ${stamp()}` + (S.doc.sha ? ` · DOC ${S.doc.sha.slice(0, 8)}` : ''));
   }
-  addItem(cv, pi, (ev.clientX - r.left) / r.width, (ev.clientY - r.top) / r.height, sig.defW || 0.22, !!sig.vault, sig.label);
+  addItem(cv, pi, (ev.clientX - r.left) / r.width, (ev.clientY - r.top) / r.height, sig.defW || 0.22, sig.label);
   if (sig.once) { S.armed = null; document.body.classList.remove('placing'); }
   guide('放好了！可以拖曳移動、拉右下角縮放、按 × 刪除。同一個簽名可以繼續點別處再簽，滿意後到第 4 步匯出 🎉', 'ok');
 }
-function addItem(cv, pi, cx, cy, w, vault, label) {
+function addItem(cv, pi, cx, cy, w, label) {
   const p = S.pages[pi], ar = cv.height / cv.width, hf = w * ar * p.cv.width / p.cv.height;
-  const it = { id: ++S.seq, page: pi, x: cx - w / 2, y: cy - hf / 2, w, ar, cv, vault, label };
+  const it = { id: ++S.seq, page: pi, x: cx - w / 2, y: cy - hf / 2, w, ar, cv, label };
   const el = document.createElement('div'); el.className = 'item'; el.tabIndex = 0;
   const img = document.createElement('img'); img.src = cv.toDataURL(); img.draggable = false; img.alt = label;
   const del = document.createElement('button'); del.className = 'del'; del.textContent = '×'; del.title = '刪除';
@@ -269,7 +292,7 @@ function auditCanvas() {
     ['職稱／角色', $('fTitle').value.trim() || '—'], ['事由／意見', $('fNote').value.trim() || '—'], ['簽核時間', stamp() + '（本機時間）'], ['總頁數', String(S.pages.length)], ['簽核標記', `共 ${S.items.length} 處`]];
   let y = 260; rows.forEach(([k, v]) => { x.fillStyle = '#5b6478'; x.fillText(k, 90, y); x.fillStyle = '#14213d'; x.fillText(v, 360, y); y += 54; });
   y += 20; S.items.forEach((i, n) => { if (y > 1620) return; x.fillStyle = '#14213d'; x.fillText(`${n + 1}. 第 ${i.page + 1} 頁「${i.label}」 位置 (${(i.x * 100).toFixed(1)}%, ${(i.y * 100).toFixed(1)}%)`, 90, y); y += 44; });
-  x.fillStyle = '#8a93a6'; x.font = `400 22px ${FONT}`; x.fillText('本頁由「Allan & 阿拉蕾 文件簽核工坊」於瀏覽器本機產生；簽名為影像簽核，非數位憑證簽章。', 90, 1690);
+  x.fillStyle = '#8a93a6'; x.font = `400 22px ${FONT}`; x.fillText("本頁由「Allan's簽名工作坊」於瀏覽器本機產生；簽名為影像簽核，非數位憑證簽章。", 90, 1690);
   return c;
 }
 const outName = ext => S.doc.name.replace(/\.[^.]+$/, '') + '_signed.' + ext;
@@ -298,7 +321,7 @@ async function exportPdf() {
   const who = $('fName').value.trim();
   if (who) pdf.setAuthor(who);
   pdf.setSubject(`Signed ${stamp()}` + (who ? ` by ${who}` : '')); pdf.setKeywords(['signed', 'source-sha256:' + S.doc.sha]);
-  pdf.setProducer('Allan & ARALE Sign Studio'); pdf.setModificationDate(new Date());
+  pdf.setProducer("Allan's Sign Studio"); pdf.setModificationDate(new Date());
   download(await pdf.save(), outName('pdf'), 'application/pdf');
 }
 async function exportPng() {
@@ -332,68 +355,9 @@ async function runExport(fn, what) {
   $('padClear').onclick = clear; $('padCancel').onclick = () => $('dlgDraw').close();
   $('padOk').onclick = () => {
     if (!dirty) return toast('先簽個名嘛～');
-    const s = { id: 'u' + Date.now(), label: '我的手寫簽名', cv: cleanSignature(c) }; S.sigs.push(s); $('dlgDraw').close(); renderSigs(); if (S.pages.length) arm(s);
+    const cv = cleanSignature(c); $('dlgDraw').close(); addSig('手寫簽名', cv);
   };
 })();
-
-/* ---------- Allan 專屬模式 ---------- */
-let found = null, fails = 0, lockUntil = 0, idleT;
-const lockFace = (f, msg) => { $('lockImg').src = `assets/chars/allan-${f}.jpg`; if (msg) $('lockMsg').textContent = msg; };
-async function showLock() {
-  if (S.allan) return lockNow('已上鎖，簽名已從記憶體清除');
-  if (!window.isSecureContext || !crypto.subtle) return toast('需要 HTTPS 或 localhost 才能使用加密功能', 5000);
-  found = await Vault.locate(); $('lockPass').value = '';
-  $('vaultState').textContent = found ? `已找到保險箱（來源：${found.from === 'device' ? '此瀏覽器' : '網站 vault/ 目錄'}）` : '尚未找到保險箱。第一次使用請按「建立保險箱」，或載入先前下載的保險箱檔。';
-  lockFace('point', found ? '請輸入通關密語，解開簽名保險箱。' : '這台裝置還沒有保險箱，請先在下方「保險箱管理」建立或載入。');
-  $('dlgLock').showModal(); $('lockPass').focus();
-}
-async function tryUnlock() {
-  if (!found) return lockFace('confused', '還沒有保險箱可以解鎖，請先建立或載入。');
-  const wait = lockUntil - Date.now(); if (wait > 0) return lockFace('think', `請等 ${Math.ceil(wait / 1000)} 秒再試。`);
-  const pass = $('lockPass').value; if (!pass) return;
-  $('lockGo').disabled = true; lockFace('think', '驗證中…');
-  try { const data = await Vault.open(found.vault, pass); fails = 0; $('lockPass').value = ''; $('dlgLock').close(); await enterAllan(data); }
-  catch (e) { fails++; lockUntil = Date.now() + Math.min(60, 2 ** fails) * 1000; lockFace('confused', `密語不對喔（第 ${fails} 次）。${Math.min(60, 2 ** fails)} 秒後可再試。`); }
-  finally { $('lockGo').disabled = false; }
-}
-async function enterAllan(data) {
-  const sigs = []; for (const s of data.sigs) { const im = await loadImage(s.png), cv = mkCanvas(im.naturalWidth, im.naturalHeight); cv.getContext('2d').drawImage(im, 0, 0); sigs.push({ id: s.id, label: s.label, cv, vault: true }); }
-  S.allan = { name: data.owner }; S.sigs = sigs; S.armed = null; renderSigs();
-  document.body.classList.add('allan'); $('modeBadge').textContent = '👑 Allan 專屬模式'; $('modeBadge').className = 'badge allan'; $('btnLock').textContent = '🔒 立即上鎖';
-  $('fName').value = data.owner || ''; $('fTitle').value = data.title || ''; $('optBind').checked = true;
-  guide(`歡迎回來，${data.owner}！你的簽名已解鎖（只存在記憶體，閒置 10 分鐘自動上鎖）。`, 'happy'); armIdle();
-}
-function lockNow(msg) {
-  if (!S.allan) return; clearTimeout(idleT);
-  S.items.filter(i => i.vault).forEach(removeItem);                 // 尚未匯出的 Allan 簽名一併清除
-  S.sigs.forEach(s => { if (s.vault) { s.cv.width = s.cv.height = 1; } });
-  S.allan = null; S.armed = null; document.body.classList.remove('allan', 'placing');
-  $('modeBadge').textContent = '🌈 分享模式'; $('modeBadge').className = 'badge share'; $('btnLock').textContent = '🔐 Allan 專屬';
-  $('fName').value = $('fTitle').value = ''; $('optBind').checked = false; resetShareSigs();
-  toast('🔒 ' + msg); guide('Allan 的簽名已經鎖回保險箱了。現在是分享模式～', 'ok');
-}
-function armIdle() { clearTimeout(idleT); if (S.allan) idleT = setTimeout(() => lockNow('閒置 10 分鐘，已自動上鎖'), IDLE_MS); }
-['pointerdown', 'keydown'].forEach(t => document.addEventListener(t, armIdle, true));
-
-async function buildVault() {
-  const msg = m => $('bMsg').textContent = m, zh = $('bZh').files[0], en = $('bEn').files[0], p1 = $('bP1').value;
-  if (!zh && !en) return msg('請至少選一張簽名圖。');
-  if (p1.length < 12) return msg('通關密語至少 12 個字元，建議用一句只有你知道的話。');
-  if (p1 !== $('bP2').value) return msg('兩次輸入的密語不一致。');
-  $('bGo').disabled = true; msg('加密中…');
-  try {
-    const sigs = [];
-    if (zh) sigs.push({ id: 'zh', label: '中文簽名', png: cleanSignature(await fileToImage(zh)).toDataURL('image/png') });
-    if (en) sigs.push({ id: 'en', label: '英文簽名', png: cleanSignature(await fileToImage(en)).toDataURL('image/png') });
-    const data = { owner: $('bName').value.trim() || 'Allan Lo', title: $('bTitle').value.trim(), created: new Date().toISOString(), sigs };
-    const vault = await Vault.seal(data, p1);
-    await Vault.open(vault, p1);                                    // 回讀驗證
-    if ($('bRemember').checked) Vault.remember(vault);
-    download(new TextEncoder().encode(JSON.stringify(vault)), 'allan.vault.json', 'application/json');
-    ['bP1', 'bP2', 'bZh', 'bEn'].forEach(i => $(i).value = ''); msg(''); $('dlgBuild').close(); $('dlgLock').close();
-    found = { vault, from: 'device' }; await enterAllan(data); toast('保險箱已建立並下載備份，請妥善保存 allan.vault.json', 6000);
-  } catch (e) { console.error(e); msg('失敗：' + e.message); } finally { $('bGo').disabled = false; }
-}
 
 /* ---------- 事件繫結 ---------- */
 $('fileDoc').onchange = e => { if (e.target.files[0]) openDoc(e.target.files[0]); e.target.value = ''; };
@@ -403,23 +367,14 @@ const drop = $('drop');
 document.addEventListener('drop', e => { if (e.dataTransfer.files.length) { e.preventDefault(); openDoc(e.dataTransfer.files[0]); } });
 $('fileSig').onchange = async e => {
   const f = e.target.files[0]; e.target.value = ''; if (!f) return;
-  try { const s = { id: 'u' + Date.now(), label: f.name.replace(/\.[^.]+$/, '').slice(0, 14) || '我的簽名', cv: cleanSignature(await fileToImage(f)) }; S.sigs.push(s); renderSigs(); guide('簽名收到！我已經幫你去掉白底了。點它再點文件就能簽囉～', 'ok'); if (S.pages.length) arm(s); }
+  try { addSig(f.name.replace(/\.[^.]+$/, '').slice(0, 14) || '我的簽名', cleanSignature(await fileToImage(f))); }
   catch (err) { toast(err.message); }
 };
 $('btnInfo').onclick = () => armStamp(false); $('btnDate').onclick = () => armStamp(true);
 $('btnPdf').onclick = () => runExport(exportPdf, ' PDF '); $('btnPng').onclick = () => runExport(exportPng, '圖檔');
-$('btnLock').onclick = showLock; $('lockGo').onclick = tryUnlock; $('lockCancel').onclick = () => $('dlgLock').close();
-$('lockPass').addEventListener('keydown', e => { if (e.key === 'Enter') { e.preventDefault(); tryUnlock(); } });
-$('btnBuild').onclick = () => { $('bMsg').textContent = ''; $('dlgBuild').showModal(); }; $('bCancel').onclick = () => $('dlgBuild').close(); $('bGo').onclick = buildVault;
-$('btnForget').onclick = () => { if (confirm('確定清除此瀏覽器記住的加密保險箱？（不影響你另存的保險箱檔）')) { Vault.forget(); found = null; $('vaultState').textContent = '已清除。'; } };
-$('fileVault').onchange = async e => {
-  const f = e.target.files[0]; e.target.value = ''; if (!f) return;
-  try { const v = JSON.parse(await f.text()); if (v.format !== 'allan-sign-vault') throw 0; found = { vault: v, from: 'device' }; Vault.remember(v); $('vaultState').textContent = '保險箱檔已載入，請輸入通關密語。'; lockFace('point', '保險箱檔已載入，請輸入通關密語。'); }
-  catch (err) { $('vaultState').textContent = '這不是有效的保險箱檔。'; }
-};
 $('btnShare').onclick = async () => {
   const url = location.origin + location.pathname;
-  try { await navigator.clipboard.writeText(url); toast('已複製分享連結！對方看到的是分享模式，拿不到 Allan 的簽名 👍'); } catch (e) { prompt('複製這個連結分享：', url); }
+  try { await navigator.clipboard.writeText(url); toast('已複製分享連結！簽名只存在各自的裝置，對方拿不到你的簽名 👍'); } catch (e) { prompt('複製這個連結分享：', url); }
 };
 window.addEventListener('beforeunload', e => { if (S.items.length) { e.preventDefault(); e.returnValue = ''; } });
 $('mTools').onclick = () => sheet(!document.body.classList.contains('sheet'));
@@ -427,5 +382,4 @@ $('mPdf').onclick = () => $('btnPdf').click(); $('mPng').onclick = () => $('btnP
 $('stage').addEventListener('pointerdown', () => { if (MOBILE.matches) sheet(false); });
 sheet(MOBILE.matches);
 $('fDate').value = stamp().slice(0, 10);
-resetShareSigs();
-if (location.hash === '#allan') showLock();
+initSigs();
