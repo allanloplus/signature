@@ -24,4 +24,12 @@
 
 ## 部署
 靜態網站，無需建置。以 GitHub Pages（或任何 HTTPS 靜態主機）發佈根目錄即可。
-本機測試：`python3 -m http.server` 後開啟 `http://localhost:8000`。
+
+### 不架站，直接開 `index.html` 可以嗎？
+可以。在電腦上直接雙擊 `index.html` 即可簽核 PDF、Word、圖檔，簽名也會保存在本機。
+以下情況才需要透過網站（HTTP/HTTPS）開啟：
+- **未內嵌中文字型的 PDF**：直接開檔時中文會顯示成空白（瀏覽器禁止本機頁面讀取 `vendor/cmaps/` 字碼檔）。
+- **手機使用**：手機需要網址才能開啟。
+- **分享連結與分享縮圖**：只有部署到網站後才有作用。
+
+若只想在本機用網站方式開啟（非必要）：執行 `python3 -m http.server` 後開啟 `http://localhost:8000`。
