@@ -1,0 +1,4 @@
+# 絕不提交未加密的簽名原圖
+/private/
+*.sig.png
+node_modules/

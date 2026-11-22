@@ -1,0 +1,171 @@
+<!doctype html>
+<html lang="zh-Hant">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<meta http-equiv="Content-Security-Policy" content="default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self' data: blob:; font-src 'self' data:; worker-src 'self' blob:; connect-src 'self'; object-src 'none'; base-uri 'none'; form-action 'none'">
+<meta name="referrer" content="no-referrer">
+<title>Allan & 阿拉蕾 文件簽核工坊</title>
+<link rel="icon" href="assets/chars/arale-ok.jpg">
+<link rel="stylesheet" href="css/app.css">
+</head>
+<body>
+<header class="top">
+  <div class="brand">
+    <img src="assets/chars/arale-happy.jpg" alt="" class="ava">
+    <div>
+      <h1>文件簽核工坊</h1>
+      <p>Allan &amp; ARALE Sign Studio</p>
+    </div>
+  </div>
+  <div class="top-actions">
+    <span id="modeBadge" class="badge share">🌈 分享模式</span>
+    <button id="btnShare" class="btn ghost" title="複製分享連結">🔗<span> 分享</span></button>
+    <button id="btnLock" class="btn navy">🔐 Allan 專屬</button>
+  </div>
+</header>
+
+<section class="guide">
+  <img id="guideImg" src="assets/chars/arale-wave.jpg" alt="阿拉蕾">
+  <div class="bubble"><b>阿拉蕾：</b><span id="guideText">嗨～把要簽核的 Word、PDF 或圖檔丟給我吧！所有檔案都只在你的瀏覽器裡處理，不會上傳喔 ✨</span></div>
+</section>
+
+<main class="layout">
+  <aside class="panel">
+    <div class="card">
+      <h2><i>1</i> 上傳文件</h2>
+      <label id="drop" class="drop">
+        <input id="fileDoc" type="file" accept=".pdf,.docx,image/png,image/jpeg,image/webp,image/gif,image/bmp" hidden>
+        <strong>📄 點我或拖曳檔案到這裡</strong>
+        <small>PDF・Word (.docx)・PNG / JPG</small>
+      </label>
+      <div id="docInfo" class="docinfo" hidden></div>
+    </div>
+
+    <div class="card">
+      <h2><i>2</i> 選擇簽名</h2>
+      <div id="sigList" class="siglist"></div>
+      <div class="row">
+        <label class="btn small">⬆️ 上傳簽名<input id="fileSig" type="file" accept="image/*" hidden></label>
+        <button id="btnDraw" class="btn small">✍️ 手寫簽名</button>
+      </div>
+      <label class="check"><input id="optBind" type="checkbox"> 簽名下方加註「時間＋文件指紋」（防挪用）</label>
+      <small class="hint">點一下簽名 → 再點文件上的位置；放上去後可拖曳、縮放。</small>
+    </div>
+
+    <div class="card">
+      <h2><i>3</i> 簽名資訊</h2>
+      <div class="form">
+        <label>簽核人<input id="fName" placeholder="姓名"></label>
+        <label>職稱／角色<input id="fTitle" placeholder="例：主導稽核員"></label>
+        <label>日期<input id="fDate" type="date"></label>
+        <label>事由／意見<input id="fNote" placeholder="例：核准、已審閱"></label>
+        <label>墨色
+          <select id="fColor"><option value="#14213d">深藍黑</option><option value="#1d4ed8">藍</option><option value="#c1121f">紅</option><option value="#111111">黑</option></select>
+        </label>
+        <label class="check inline"><input id="fBorder" type="checkbox" checked> 加外框</label>
+      </div>
+      <div class="row">
+        <button id="btnInfo" class="btn small yellow">🏷️ 加入資訊章</button>
+        <button id="btnDate" class="btn small">📅 只加日期</button>
+      </div>
+    </div>
+
+    <div class="card">
+      <h2><i>4</i> 匯出</h2>
+      <label class="check"><input id="optAudit" type="checkbox"> 附加「簽核紀錄頁」（含原始檔 SHA-256）</label>
+      <div class="row">
+        <button id="btnPdf" class="btn teal" disabled>⬇️ 生成 PDF</button>
+        <button id="btnPng" class="btn yellow" disabled>🖼️ 生成圖檔</button>
+      </div>
+    </div>
+    <p class="foot">🔒 純前端運算・零上傳・零追蹤</p>
+  </aside>
+
+  <section id="stage" class="stage">
+    <div id="empty" class="empty">
+      <img src="assets/chars/arale-show.jpg" alt="">
+      <img src="assets/chars/allan-full.jpg" alt="">
+      <p>文件會顯示在這裡，等你來簽！</p>
+    </div>
+    <div id="pages" class="pages"></div>
+  </section>
+</main>
+
+<nav class="mbar">
+  <button id="mTools" class="btn yellow">🧰 工具／簽名</button>
+  <button id="mPdf" class="btn teal" disabled>⬇️ PDF</button>
+  <button id="mPng" class="btn" disabled>🖼️ 圖檔</button>
+</nav>
+<div id="docxHost" class="docx-host" aria-hidden="true"></div>
+<div id="toast" class="toast" hidden></div>
+<div id="busy" class="busy" hidden><div><img src="assets/chars/arale-go.jpg" alt=""><p id="busyText">處理中…</p></div></div>
+
+<!-- Allan 專屬：解鎖 -->
+<dialog id="dlgLock" class="dlg">
+  <form method="dialog" class="dlg-body" id="lockForm">
+    <img id="lockImg" src="assets/chars/allan-point.jpg" alt="Allan">
+    <h3>Allan 專屬模式</h3>
+    <p id="lockMsg">請輸入通關密語，解開簽名保險箱。</p>
+    <input id="lockPass" type="password" autocomplete="off" placeholder="通關密語">
+    <div class="row">
+      <button type="button" id="lockGo" class="btn navy">🔓 解鎖</button>
+      <button type="button" id="lockCancel" class="btn ghost">取消</button>
+    </div>
+    <details>
+      <summary>保險箱管理</summary>
+      <p class="hint" id="vaultState"></p>
+      <div class="row">
+        <label class="btn small">📂 載入保險箱檔<input id="fileVault" type="file" accept=".json" hidden></label>
+        <button type="button" id="btnBuild" class="btn small yellow">🛠️ 建立／重建保險箱</button>
+        <button type="button" id="btnForget" class="btn small ghost">🗑️ 清除此裝置的保險箱</button>
+      </div>
+    </details>
+  </form>
+</dialog>
+
+<!-- 建立保險箱 -->
+<dialog id="dlgBuild" class="dlg">
+  <div class="dlg-body">
+    <img src="assets/chars/allan-think.jpg" alt="">
+    <h3>建立簽名保險箱</h3>
+    <p class="hint">簽名圖會在本機以 AES-256-GCM 加密（PBKDF2-SHA256 × 600,000 次），原圖不會離開這台電腦。</p>
+    <div class="form">
+      <label>中文簽名圖<input id="bZh" type="file" accept="image/*"></label>
+      <label>英文簽名圖<input id="bEn" type="file" accept="image/*"></label>
+      <label>簽核人姓名<input id="bName" value="Allan Lo"></label>
+      <label>職稱（選填）<input id="bTitle"></label>
+      <label>通關密語（至少 12 字元）<input id="bP1" type="password" autocomplete="new-password"></label>
+      <label>再輸入一次<input id="bP2" type="password" autocomplete="new-password"></label>
+      <label class="check"><input id="bRemember" type="checkbox" checked> 把「加密後」的保險箱記在此瀏覽器</label>
+    </div>
+    <p id="bMsg" class="hint"></p>
+    <div class="row">
+      <button id="bGo" class="btn navy">🔐 加密並下載保險箱檔</button>
+      <button id="bCancel" class="btn ghost">取消</button>
+    </div>
+  </div>
+</dialog>
+
+<!-- 手寫 -->
+<dialog id="dlgDraw" class="dlg">
+  <div class="dlg-body">
+    <h3>✍️ 手寫簽名</h3>
+    <canvas id="pad" width="1200" height="480"></canvas>
+    <div class="row">
+      <button id="padOk" class="btn teal">使用這個簽名</button>
+      <button id="padClear" class="btn small">清除</button>
+      <button id="padCancel" class="btn ghost">取消</button>
+    </div>
+  </div>
+</dialog>
+
+<script src="vendor/jszip.min.js"></script>
+<script src="vendor/pdf.min.js"></script>
+<script src="vendor/pdf-lib.min.js"></script>
+<script src="vendor/docx-preview.min.js"></script>
+<script src="vendor/html2canvas.min.js"></script>
+<script src="js/vault.js"></script>
+<script src="js/app.js"></script>
+</body>
+</html>
