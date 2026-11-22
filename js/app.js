@@ -146,7 +146,7 @@ async function openDoc(file) {
     else throw new Error('不支援的檔案格式');
     clearDoc(); S.doc = { name, kind, bytes, sha }; S.pages = pages; renderPages();
     $('docInfo').hidden = false; $('docInfo').textContent = `📎 ${name}｜${pages.length} 頁` + (sha ? `｜指紋 ${sha.slice(0, 8)}` : '');
-    $('btnPdf').disabled = $('btnPng').disabled = $('mPdf').disabled = $('mPng').disabled = false; sheet(false); $('btnClear').hidden = false;
+    $('btnPdf').disabled = $('btnPng').disabled = $('mPdf').disabled = $('mPng').disabled = false; sheet(false); $('btnClear').hidden = false; $('notice').hidden = true;
     guide(kind === 'docx' ? 'Word 開好了！版面是我盡力還原的，若要 100% 原樣，建議先在 Word 另存 PDF。接著選個簽名吧～' : '文件開好了！從左邊第 2 步挑一個簽名，再點文件上的位置。', 'explain');
   } catch (e) { console.error(e); toast('開啟失敗：' + e.message, 5000); guide('嗚…這份文件我打不開：' + e.message, 'cry'); }
   finally { busy(false); }
@@ -197,9 +197,9 @@ function goHome() {
   if (!S.doc) { scrollTo({ top: 0, behavior: 'smooth' }); return; }
   if (S.items.length && !confirm('要清空目前的文件嗎？尚未匯出的簽名位置會一併清除（已存的簽名檔不受影響）。')) return;
   clearDoc(); S.doc = null; S.armed = null; document.body.classList.remove('placing'); renderSigs();
-  $('empty').hidden = false; $('docInfo').hidden = true; $('docInfo').textContent = ''; $('btnClear').hidden = true;
+  $('empty').hidden = false; $('notice').hidden = false; $('docInfo').hidden = true; $('docInfo').textContent = ''; $('btnClear').hidden = true;
   $('btnPdf').disabled = $('btnPng').disabled = $('mPdf').disabled = $('mPng').disabled = true;
-  guide('清乾淨囉！把下一份要簽的 Word、PDF 或圖檔丟給我吧～你的簽名檔都還在 ✨', 'wave'); sheet(MOBILE.matches); scrollTo({ top: 0 });
+  guide('清乾淨囉！把下一份要簽的 Word、PDF 或圖檔丟給我吧～你的簽名檔都還在 ✨', 'wave'); sheet(false); scrollTo({ top: 0 });
 }
 function renderPages() {
   const box = $('pages'); box.innerHTML = ''; $('empty').hidden = true;
@@ -389,6 +389,6 @@ window.addEventListener('beforeunload', e => { if (S.items.length) { e.preventDe
 $('mTools').onclick = () => sheet(!document.body.classList.contains('sheet'));
 $('mPdf').onclick = () => $('btnPdf').click(); $('mPng').onclick = () => $('btnPng').click();
 $('stage').addEventListener('pointerdown', () => { if (MOBILE.matches) sheet(false); });
-sheet(MOBILE.matches);
+$('btnStart').onclick = () => $('fileDoc').click();
 $('fDate').value = stamp().slice(0, 10);
 initSigs();
